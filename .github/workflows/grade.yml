@@ -1,0 +1,250 @@
+name: ERP Coding Test Auto-Grader
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  grade-submission:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: erp_test
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      mongo:
+        image: mongo:6
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.adminCommand(\"ping\")'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install MongoDB Node Driver (Root)
+        run: npm install mongodb
+
+      - name: Install Dependencies (Frontend)
+        run: |
+          if [ -f "student-template/frontend/package.json" ]; then
+            cd student-template/frontend
+            npm install
+          fi
+
+      - name: Install Dependencies (Backend Python)
+        run: |
+          if [ -f "student-template/backend/python/requirements.txt" ]; then
+            pip install -r student-template/backend/python/requirements.txt
+          fi
+          pip install pytest requests psycopg2-binary pymongo
+
+      - name: Initialize Database Schema
+        run: |
+          echo "Waiting for Postgres..."
+          sleep 5
+
+          # Initialize PostgreSQL using a here-document to avoid YAML parsing errors
+          PGPASSWORD=test_password psql -h localhost -p 5432 -U test_user -d erp_test <<EOF
+            CREATE TABLE IF NOT EXISTS inventory (
+              id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+              product_name VARCHAR(255),
+              quantity INT,
+              reorder_level INT,
+              last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS orders (
+              order_id VARCHAR(50) PRIMARY KEY,
+              customer_id VARCHAR(50),
+              total_amount DECIMAL(10,2),
+              order_date DATE
+            );
+            INSERT INTO inventory (product_name, quantity, reorder_level) VALUES
+            ('Widget A', 5, 10),
+            ('Widget B', 20, 5),
+            ('Gadget C', 2, 15);
+            INSERT INTO orders (order_id, customer_id, total_amount, order_date) VALUES
+            ('ORD-1001', 'CUST-001', 150.00, '2025-01-15'),
+            ('ORD-1002', 'CUST-001', 200.00, '2025-02-10'),
+            ('ORD-1003', 'CUST-002', 50.00, '2025-01-20');
+          EOF
+
+          echo "Initializing Mongo via Node.js..."
+          node <<EOF
+            const { MongoClient } = require('mongodb');
+            const uri = 'mongodb://localhost:27017';
+            const client = new MongoClient(uri);
+
+            async function run() {
+              try {
+                await client.connect();
+                const db = client.db('erp_audit');
+                const collection = db.collection('order_audit');
+
+                // Clear existing data
+                await collection.deleteMany({});
+
+                // Insert test data
+                await collection.insertMany([
+                  {order_id: 'ORD-1001', old_status: 'PENDING', new_status: 'SHIPPED', changed_by: 'admin', timestamp: new Date()},
+                  {order_id: 'ORD-1001', old_status: 'CREATED', new_status: 'PENDING', changed_by: 'system', timestamp: new Date()},
+                  {order_id: 'ORD-1002', old_status: 'PENDING', new_status: 'CANCELLED', changed_by: 'user', timestamp: new Date()}
+                ]);
+                console.log('MongoDB initialized successfully');
+              } finally {
+                await client.close();
+              }
+            }
+            run().catch(console.dir);
+          EOF
+
+      - name: Run Backend Tests (Python)
+        id: python_test
+        continue-on-error: true
+        if: always()
+        run: |
+          if [ -f "student-template/backend/python/app.py" ]; then
+            cd student-template/backend/python
+            export DATABASE_URL="postgresql://test_user:test_password@localhost:5432/erp_test"
+            python -m pytest ../../../../tests/test_api_python.py -v --tb=short || echo "PYTHON_TEST_FAILED"
+          else
+            echo "Python backend not found, skipping."
+          fi
+
+      - name: Run Database Query Tests
+        id: db_test
+        continue-on-error: true
+        if: always()
+        run: |
+          if [ -f "student-template/database/queries.sql" ]; then
+            python tests/test_queries.py || echo "DB_TEST_FAILED"
+          else
+            echo "Database queries not found, skipping."
+          fi
+
+      - name: Run Frontend Tests
+        id: frontend_test
+        continue-on-error: true
+        if: always()
+        run: |
+          if [ -f "student-template/frontend/package.json" ]; then
+            cd student-template/frontend
+            npm test -- --passWithNoTests || echo "FRONTEND_TEST_FAILED"
+          else
+            echo "Frontend not found, skipping."
+          fi
+
+      - name: Calculate Score & Generate JSON
+        id: score
+        run: |
+          python_score=0
+          db_score=0
+          frontend_score=0
+          ci_score=0
+          prompt_score=0
+
+          # Q1: Backend Check (Strict: Must define function AND return logic)
+          if [ -f "student-template/backend/python/app.py" ]; then
+             if grep -q "def get_alerts" student-template/backend/python/app.py && grep -q "quantity <= reorder_level" student-template/backend/python/app.py; then
+               python_score=25
+             fi
+          elif [ -f "student-template/backend/java/InventoryController.java" ]; then
+             if grep -q "public.*getAlerts" student-template/backend/java/InventoryController.java && grep -q "reorder_level" student-template/backend/java/InventoryController.java; then
+               python_score=25
+             fi
+          fi
+
+          # Q2: Database Check (Strict: Must have WHERE, ORDER BY, LIMIT)
+          if [ -f "student-template/database/queries.sql" ]; then
+             if grep -qi "2025" student-template/database/queries.sql && \
+                grep -qi "ORDER BY" student-template/database/queries.sql && \
+                grep -qi "LIMIT 5" student-template/database/queries.sql; then
+               db_score=10
+             fi
+          fi
+
+          if [ -f "student-template/database/queries.mongodb" ]; then
+             if grep -q "ORD-1001" student-template/database/queries.mongodb && \
+                grep -q "PENDING" student-template/database/queries.mongodb && \
+                grep -q "SHIPPED" student-template/database/queries.mongodb; then
+               db_score=$((db_score + 10))
+             fi
+          fi
+
+          # Q3: Frontend Check (Strict: Must have useEffect, fetch, and map/render)
+          if [ -f "student-template/frontend/Dashboard.jsx" ]; then
+             if grep -q "useEffect" student-template/frontend/Dashboard.jsx && \
+                grep -q "fetch" student-template/frontend/Dashboard.jsx && \
+                grep -q "map" student-template/frontend/Dashboard.jsx; then
+               frontend_score=20
+             fi
+          fi
+
+          # Q4: CI/CD Check (Must have specific steps)
+          if [ -f ".github/workflows/grade.yml" ]; then
+             if grep -q "npm install" .github/workflows/grade.yml && \
+                grep -q "pytest\|mvn test" .github/workflows/grade.yml; then
+               ci_score=15
+             fi
+          fi
+
+          # Q5: Prompt Check (Must be substantial)
+          if [ -f "student-template/prompt.txt" ]; then
+             line_count=$(wc -l < student-template/prompt.txt)
+             word_count=$(wc -w < student-template/prompt.txt)
+             if [ "$line_count" -gt 5 ] && [ "$word_count" -gt 50 ]; then
+               prompt_score=20
+             fi
+          fi
+
+          total=$((python_score + db_score + frontend_score + ci_score + prompt_score))
+
+          # Count questions attempted
+          q_count=0
+          [ $python_score -gt 0 ] && q_count=$((q_count + 1))
+          [ $db_score -gt 0 ] && q_count=$((q_count + 1))
+          [ $frontend_score -gt 0 ] && q_count=$((q_count + 1))
+          [ $ci_score -gt 0 ] && q_count=$((q_count + 1))
+          [ $prompt_score -gt 0 ] && q_count=$((q_count + 1))
+
+          echo "{\"total_score\": $total, \"breakdown\": {\"q1_backend\": $python_score, \"q2_database\": $db_score, \"q3_frontend\": $frontend_score, \"q4_cicd\": $ci_score, \"q5_prompt\": $prompt_score}, \"questions_attempted\": $q_count}" > score.json
+          cat score.json
+
+      - name: Upload Score Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: score-result
+          path: score.json
+          retention-days: 5
