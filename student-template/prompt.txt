@@ -1,4 +1,338 @@
 # TODO: Write your AI prompt below this line
 
+You are an expert React and TypeScript developer. Build a production-ready React component named SupplierPerformance for a procurement or supply-chain dashboard.
 
+The component must display supplier performance information, including:
+
+1. On-time delivery percentage for each supplier.
+2. Average response time to purchase orders.
+3. Color-coded supplier status using Green, Yellow, and Red indicators.
+
+COMPONENT NAME
+
+SupplierPerformance
+
+TECHNOLOGY REQUIREMENTS
+
+- Use React functional components and hooks.
+- Use TypeScript.
+- Export SupplierPerformance as the default export.
+- Do not use external UI libraries unless absolutely necessary.
+- Use CSS classes or inline styles for the design.
+- Create clean, reusable, and maintainable code.
+- Include accessible semantic HTML and ARIA labels.
+- Make the component responsive for desktop, tablet, and mobile screens.
+
+EXPECTED PROPS
+
+The component should accept the following props:
+
+type SupplierPerformanceProps = {
+  apiEndpoint?: string;
+  suppliers?: Supplier[];
+  refreshIntervalMs?: number;
+  theme?: "light" | "dark";
+  viewMode?: "cards" | "table";
+  className?: string;
+};
+
+The props should work as follows:
+
+- apiEndpoint:
+  Optional URL used to fetch supplier performance data.
+- suppliers:
+  Optional supplier data provided directly by the parent component.
+- refreshIntervalMs:
+  Optional refresh interval in milliseconds. If provided, the component should periodically refresh data from the API.
+- theme:
+  Optional theme value. Supported values are "light" and "dark". Use "light" as the default.
+- viewMode:
+  Determines whether the widget is displayed as cards or a table. Supported values are "cards" and "table". Use "cards" as the default.
+- className:
+  Optional CSS class name for customizing the widget container.
+
+EXPECTED SUPPLIER DATA STRUCTURE
+
+Define the following TypeScript type:
+
+type Supplier = {
+  supplierId: string;
+  supplierName: string;
+  onTimeDeliveryPct: number;
+  avgResponseTimeHours: number;
+  status?: "Green" | "Yellow" | "Red";
+  lastUpdated?: string;
+};
+
+Example API response:
+
+{
+  "data": [
+    {
+      "supplierId": "SUP-001",
+      "supplierName": "Acme Supplies",
+      "onTimeDeliveryPct": 97,
+      "avgResponseTimeHours": 3.5
+    },
+    {
+      "supplierId": "SUP-002",
+      "supplierName": "Global Parts Ltd.",
+      "onTimeDeliveryPct": 88,
+      "avgResponseTimeHours": 6.5
+    },
+    {
+      "supplierId": "SUP-003",
+      "supplierName": "Rapid Components",
+      "onTimeDeliveryPct": 72,
+      "avgResponseTimeHours": 12
+    }
+  ],
+  "lastUpdated": "2026-08-09T06:00:00.000Z"
+}
+
+The component should support both of these data sources:
+
+1. Directly supplied suppliers prop.
+2. Data fetched from apiEndpoint.
+
+If suppliers are provided through props, use that data instead of making an API request.
+
+STATUS AND COLOR-CODING LOGIC
+
+Calculate the supplier status using the following rules:
+
+- Green:
+  onTimeDeliveryPct is greater than or equal to 95 AND avgResponseTimeHours is less than or equal to 4.
+
+- Yellow:
+  onTimeDeliveryPct is greater than or equal to 85 AND avgResponseTimeHours is less than or equal to 8, but the supplier does not meet the Green criteria.
+
+- Red:
+  Any supplier that does not meet the Green or Yellow criteria.
+
+Implement the status calculation in a reusable helper function, for example:
+
+function getSupplierStatus(
+  onTimeDeliveryPct: number,
+  avgResponseTimeHours: number
+): "Green" | "Yellow" | "Red"
+
+Use the following color mapping:
+
+- Green:
+  Background: light green
+  Text: dark green
+  Indicator: #16a34a
+
+- Yellow:
+  Background: light yellow
+  Text: dark yellow or dark orange
+  Indicator: #ca8a04
+
+- Red:
+  Background: light red
+  Text: dark red
+  Indicator: #dc2626
+
+The status should be calculated from the performance values. If a supplier has a status property, allow it to override the calculated status only when explicitly configured.
+
+UI LAYOUT
+
+Create a dashboard widget using a card-based layout.
+
+The widget should include:
+
+1. Header section:
+   - Title: "Supplier Performance"
+   - Optional short description: "Delivery and purchase-order response metrics"
+   - Last-updated timestamp when available.
+   - Optional refresh button.
+
+2. Supplier cards:
+   Each supplier should be displayed in an individual card containing:
+   - Supplier name.
+   - Supplier ID.
+   - On-time delivery percentage.
+   - A progress bar or circular progress indicator for on-time delivery.
+   - Average response time to purchase orders in hours.
+   - Color-coded status badge.
+   - Optional status text such as "Good", "Needs Attention", or "Critical".
+
+3. Summary section:
+   Display a small summary above the supplier cards showing:
+   - Total number of suppliers.
+   - Number of Green suppliers.
+   - Number of Yellow suppliers.
+   - Number of Red suppliers.
+
+The layout should display two or three cards per row on larger screens and one card per row on smaller screens.
+
+TABLE VIEW
+
+When viewMode is set to "table", display the supplier data in a responsive table with the following columns:
+
+- Supplier
+- Supplier ID
+- On-Time Delivery
+- Average Response Time
+- Status
+
+The On-Time Delivery column should show the percentage and a progress bar.
+
+The Status column should show a color-coded badge.
+
+Make the table responsive and ensure that it remains usable on mobile devices.
+
+LOADING, ERROR, AND EMPTY STATES
+
+Implement the following states:
+
+1. Loading state:
+   - Display a loading message or skeleton placeholders.
+   - Example text: "Loading supplier performance..."
+
+2. Error state:
+   - Display a user-friendly error message.
+   - Example text: "Unable to load supplier performance data."
+   - Include a retry button if the data was loaded from the API.
+
+3. Empty state:
+   - If there are no suppliers, display:
+     "No supplier performance data available."
+
+4. Invalid data:
+   - If a field is missing or invalid, use sensible fallback values:
+     - Missing supplier name: "Unknown Supplier"
+     - Missing supplier ID: "N/A"
+     - Invalid on-time delivery percentage: 0
+     - Invalid response time: 0
+     - Missing status: Calculate it using the status rules.
+
+DATA FETCHING
+
+If apiEndpoint is provided and suppliers are not provided:
+
+- Fetch data when the component mounts.
+- Expect the API response to contain a data array.
+- Handle HTTP errors and invalid responses.
+- Store loading, error, supplier data, and last-updated state.
+- If refreshIntervalMs is provided, refresh the API data at that interval.
+- Clear the interval when the component unmounts.
+- Avoid updating state after the component has unmounted.
+- Provide a refresh button that manually fetches the latest data.
+
+SORTING
+
+In card view:
+
+- Sort suppliers by on-time delivery percentage in descending order by default.
+
+In table view:
+
+- Allow sorting by:
+  - Supplier name.
+  - On-time delivery percentage.
+  - Average response time.
+  - Status.
+
+- Display a visual indicator showing the current sort direction.
+- Ensure sorting works correctly for numeric and text values.
+
+ACCESSIBILITY REQUIREMENTS
+
+- Use semantic HTML elements such as section, header, article, table, thead, tbody, th, and td.
+- Add an appropriate aria-label to the main widget container.
+- Use accessible labels for progress bars.
+- Ensure status is not communicated by color alone; include visible text such as Green, Yellow, or Red.
+- Ensure buttons have clear labels.
+- Ensure sufficient color contrast for both light and dark themes.
+- Make the component keyboard accessible.
+
+THEME AND STYLING
+
+- Support both light and dark themes using the theme prop.
+- Use CSS variables where possible.
+- Use a clean dashboard-style design with:
+  - Rounded cards.
+  - Subtle borders.
+  - Appropriate spacing.
+  - Clear typography hierarchy.
+  - Responsive layout.
+- Do not rely only on color to communicate meaning.
+- Include hover and focus styles for interactive elements.
+
+COMPONENT STRUCTURE
+
+Organize the implementation into reusable functions or small components where appropriate, such as:
+
+- SupplierPerformance
+- SupplierCard
+- SupplierTable
+- StatusBadge
+- ProgressBar
+- getSupplierStatus
+- normalizeSupplierData
+
+Keep the main SupplierPerformance component easy to read.
+
+EXPECTED OUTPUT
+
+Return the complete implementation, including:
+
+1. SupplierPerformance.tsx
+2. SupplierPerformance.css, or equivalent styling included in the component.
+3. TypeScript types.
+4. Helper functions.
+5. Loading, error, empty, and success states.
+6. Responsive card and table layouts.
+7. Sample usage code showing both API-based data and directly supplied data.
+
+Example usage with direct data:
+
+<SupplierPerformance
+  suppliers={[
+    {
+      supplierId: "SUP-001",
+      supplierName: "Acme Supplies",
+      onTimeDeliveryPct: 97,
+      avgResponseTimeHours: 3.5
+    },
+    {
+      supplierId: "SUP-002",
+      supplierName: "Global Parts Ltd.",
+      onTimeDeliveryPct: 88,
+      avgResponseTimeHours: 6.5
+    }
+  ]}
+  viewMode="cards"
+  theme="light"
+/>
+
+Example usage with an API:
+
+<SupplierPerformance
+  apiEndpoint="/api/supplier-performance"
+  refreshIntervalMs={60000}
+  viewMode="table"
+  theme="light"
+/>
+
+TESTING REQUIREMENTS
+
+Include or describe tests for:
+
+- Green status calculation.
+- Yellow status calculation.
+- Red status calculation.
+- Correct rendering of supplier cards.
+- Correct rendering of table view.
+- Loading state.
+- Error state.
+- Empty state.
+- Missing or invalid supplier fields.
+- Sorting functionality.
+- Manual refresh functionality.
+- Accessibility labels and status text.
+
+Do not omit any required functionality. Return clean, complete, compilable React and TypeScript code.
 ---
