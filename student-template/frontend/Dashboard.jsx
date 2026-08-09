@@ -1,13 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
 
-export default function Dashboard() {
+function Dashboard() {
   const [alerts, setAlerts] = useState([]);
 
   useEffect(() => {
-    fetch('/api/inventory/alerts')
+    fetch("/api/inventory/alerts")
       .then((response) => response.json())
-      .then((data) => setAlerts(data))
-      .catch((error) => console.error('Failed to fetch inventory alerts:', error));
+      .then((data) => {
+        setAlerts(data);
+      })
+      .catch((error) => {
+        console.error("Error fetching inventory alerts:", error);
+      });
   }, []);
 
   if (alerts.length === 0) {
@@ -23,9 +27,10 @@ export default function Dashboard() {
           <th>Reorder Level</th>
         </tr>
       </thead>
+
       <tbody>
-        {alerts.map((item) => (
-          <tr key={item.id ?? item.productId ?? item.productName}>
+        {alerts.map((item, index) => (
+          <tr key={item.id || index}>
             <td>{item.productName}</td>
             <td>{item.quantity}</td>
             <td>{item.reorderLevel}</td>
@@ -35,3 +40,5 @@ export default function Dashboard() {
     </table>
   );
 }
+
+export default Dashboard;
