@@ -1,8 +1,7 @@
-/ QUESTION 2.2: MongoDB Query
-// Task: Find audit entries for order_id "ORD-1001" where status changed from "PENDING" to "SHIPPED".
-// Collection: order_audit
-
-// TODO: Write your MongoDB query below
+// Find all audit entries for order ORD-1001
+// where the status changed from PENDING to SHIPPED.
 db.order_audit.find({
-    // Complete this query object
+  order_id: "ORD-1001",   // The order we are looking for
+  old_status: "PENDING",  // Previous status
+  new_status: "SHIPPED"   // New status
 });
